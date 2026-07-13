@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lottery.mapper.NotificationMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notification(user_id, draw_no, ticket_id, prize_level, prize_amount, is_read, create_time, update_time)
+        VALUES(#{userId}, #{drawNo}, #{ticketId}, #{prizeLevel}, #{prizeAmount}, 0, NOW(), NOW())
+    </insert>
+
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notification(user_id, draw_no, ticket_id, prize_level, prize_amount, is_read, create_time, update_time) VALUES
+        <foreach collection="list" item="n" separator=",">
+            (#{n.userId}, #{n.drawNo}, #{n.ticketId}, #{n.prizeLevel}, #{n.prizeAmount}, 0, NOW(), NOW())
+        </foreach>
+    </insert>
+
+    <select id="selectUnreadByUserId" resultType="com.lottery.pojo.vo.NotificationVO">
+        SELECT n.*, t.numbers FROM notification n
+        LEFT JOIN ticket t ON n.ticket_id = t.id
+        WHERE n.user_id = #{userId} AND n.is_read = 0
+        ORDER BY n.create_time DESC
+    </select>
+
+    <update id="markAsRead">
+        UPDATE notification SET is_read = 1, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <select id="countUnreadByUserId" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM notification WHERE user_id = #{userId} AND is_read = 0
+    </select>
+
+    <update id="deleteAll">
+        TRUNCATE TABLE notification
+    </update>
+
+</mapper>

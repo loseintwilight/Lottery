@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩票系统 - 首页</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body onload="initPage()">
+    <div class="header">
+        <h1>彩票购买抽奖系统</h1>
+        <div class="user-info" id="userInfo"></div>
+    </div>
+
+    <div class="nav">
+        <a href="index.html">首页</a>
+        <a href="buy.html">购买彩票</a>
+        <a href="history.html">购彩记录</a>
+        <a href="draw.html">开奖结果</a>
+    </div>
+
+    <div class="content">
+        <div id="notificationPanel" class="notification-panel">
+            <div class="flex-between">
+                <h3>中奖通知</h3>
+                <button class="btn btn-sm" onclick="document.getElementById('notificationPanel').classList.remove('show')">关闭</button>
+            </div>
+            <div id="notificationList"></div>
+        </div>
+
+        <div class="card">
+            <h2>账户信息</h2>
+            <p>用户名: <strong id="infoUsername"></strong></p>
+            <p>手机号: <strong id="infoPhone"></strong></p>
+            <p>余额: ¥<strong id="infoBalance"></strong></p>
+        </div>
+
+        <div class="card">
+            <div class="flex-between">
+                <h2>快速操作</h2>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="location.href='buy.html'">购买彩票</button>
+                <button class="btn" onclick="location.href='history.html'">购彩记录</button>
+                <button class="btn" onclick="location.href='draw.html'">开奖结果</button>
+                <button class="btn" onclick="doRecharge()">充值</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="flex-between">
+                <h2>管理</h2>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+                <button class="btn btn-primary" onclick="runAutoTest()">自动测试（10万用户）</button>
+                <button class="btn btn-danger" onclick="clearAllData()">清空数据</button>
+            </div>
+            <!-- 进度条 -->
+            <div class="progress-wrap" id="progressWrap">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">准备中...</div>
+            </div>
+        </div>
+
+        <!-- 中奖弹窗 -->
+        <div class="winner-modal" id="winnerModal">
+            <div class="winner-modal-content">
+                <button class="close-btn" onclick="closeWinnerModal()">&times;</button>
+                <h2>自动测试结果</h2>
+                <div id="winnerSummary"></div>
+                <div class="winner-section">
+                    <h3 id="grandTitle">特等奖</h3>
+                    <ul class="winner-list" id="grandList"></ul>
+                </div>
+                <div class="winner-section">
+                    <h3 id="firstTitle">一等奖</h3>
+                    <ul class="winner-list" id="firstList"></ul>
+                </div>
+                <div style="text-align:center;margin-top:16px;">
+                    <button class="btn btn-sm" onclick="exportAutoTestResult()">导出报表</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 并发购彩测试卡片 - 已删除 -->
+
+        <div class="card">
+            <h2>最新开奖</h2>
+            <div id="latestDrawInfo">
+                <p>加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        var progressTimer = null;
+
+        function onPageReady() {
+            document.getElementById('infoUsername').textContent = currentUser.username;
+            document.getElementById('infoPhone').textContent = currentUser.phone || '-';
+            document.getElementById('infoBalance').textContent = (currentUser.balance || 0).toFixed(2);
+
+            // 加载最新开奖（使用已完成的期号）
+            refreshLatestDraw();
+        }
+
+        function doRecharge() {
+            var amount = prompt('请输入充值金额：');
+            if (!amount) return;
+            amount = parseFloat(amount);
+            if (isNaN(amount) || amount <= 0) {
+                alert('请输入有效金额');
+                return;
+            }
+
+            apiPost('/recharge', {
+                userId: currentUser.userId,
+                amount: amount,
+                token: currentUser.token
+            }).then(function (res) {
+                if (res.code === 200) {
+                    currentUser.balance = res.data.balance;
+                    document.getElementById('balanceDisplay').textContent = (res.data.balance || 0).toFixed(2);
+                    document.getElementById('infoBalance').textContent = (res.data.balance || 0).toFixed(2);
+                    alert('充值成功！当前余额: ¥' + (res.data.balance || 0).toFixed(2));
+                } else {
+                    alert('充值失败: ' + (res.message || ''));
+                }
+            });
+        }
+
+        // ===== 自动测试（含进度轮询） =====
+        function runAutoTest() {
+            if (!confirm('确认执行自动测试？\n\n将自动注册10万用户并购买彩票，然后开奖。\n预计1~2分钟完成。')) return;
+
+            var btn = document.querySelector('.btn-primary[onclick="runAutoTest()"]');
+            btn.disabled = true;
+            btn.textContent = '测试中...';
+
+            // 显示进度条
+            var pw = document.getElementById('progressWrap');
+            pw.classList.add('active');
+            setProgress(0, '正在注册用户...');
+
+            // 开始轮询进度
+            progressTimer = setInterval(function () {
+                apiGet('/auto-test-progress').then(function (res) {
+                    if (res.code === 200 && res.data) {
+                        var p = res.data;
+                        if (p.phase === 'registering') {
+                            setProgress(p.current / p.total * 100, '注册用户中... ' + p.current + '/' + p.total);
+                        } else if (p.phase === 'buying') {
+                            setProgress(30 + (p.current / p.total * 40), '购彩中... ' + p.current + ' 人已完成');
+                        } else if (p.phase === 'drawing') {
+                            setProgress(75, '开奖中...');
+                        } else if (p.phase === 'done' || p.finished) {
+                            setProgress(100, '处理完成');
+                            stopProgressPoll();
+                        } else if (p.error) {
+                            setProgress(0, '测试失败', true);
+                            stopProgressPoll();
+                            btn.disabled = false;
+                            btn.textContent = '自动测试（10万用户）';
+                        }
+                    }
+                });
+            }, 1000);
+
+            apiPost('/auto-test', {}).then(function (res) {
+                stopProgressPoll();
+                btn.disabled = false;
+                btn.textContent = '自动测试（10万用户）';
+
+                if (res.code === 200) {
+                    setProgress(100, '自动测试完成！');
+                    showAutoTestResult(res.data);
+                    // 刷新最新开奖
+                    refreshLatestDraw();
+                } else {
+                    setProgress(0, '测试失败: ' + (res.message || ''), true);
+                    alert('测试失败: ' + (res.message || ''));
+                }
+            }).catch(function (err) {
+                stopProgressPoll();
+                btn.disabled = false;
+                btn.textContent = '自动测试（10万用户）';
+                setProgress(0, '请求失败: ' + err, true);
+                alert('请求失败: ' + err);
+            });
+        }
+
+        function showAutoTestResult(data) {
+            var modal = document.getElementById('winnerModal');
+            // 保存当前期号供导出用
+            window._autoTestDrawNo = data.drawNo;
+            document.getElementById('winnerSummary').innerHTML =
+                '<p style="font-size:14px;margin-bottom:12px;">' + data.summary + '</p>' +
+                '<p>中奖号码: <strong>' + (data.winningNumbers || []).join(', ') + '</strong></p>' +
+                '<p>总用户: ' + data.totalUsers + ' | 总彩票: ' + data.totalTickets + '张</p>' +
+                '<p>耗时: <strong>' + (data.duration / 1000).toFixed(1) + 's</strong></p>';
+
+            // 特等奖
+            var grandList = document.getElementById('grandList');
+            grandList.innerHTML = '';
+            if (data.grandPrizeWinners && data.grandPrizeWinners.length > 0) {
+                document.getElementById('grandTitle').style.display = 'block';
+                data.grandPrizeWinners.forEach(function (w) {
+                    var li = document.createElement('li');
+                    li.textContent = '用户#' + w.userId + ' ' + w.username + '  |  倍数:' + (w.betCount || 1) + '  |  奖金: ¥' + (w.prizeAmount || 0).toLocaleString();
+                    grandList.appendChild(li);
+                });
+            } else {
+                document.getElementById('grandTitle').style.display = 'block';
+                grandList.innerHTML = '<li style="color:#999;">暂无特等奖中奖者</li>';
+            }
+
+            // 一等奖
+            var firstList = document.getElementById('firstList');
+            firstList.innerHTML = '';
+            if (data.firstPrizeWinners && data.firstPrizeWinners.length > 0) {
+                document.getElementById('firstTitle').style.display = 'block';
+                data.firstPrizeWinners.forEach(function (w) {
+                    var li = document.createElement('li');
+                    li.textContent = '用户#' + w.userId + ' ' + w.username + '  |  倍数:' + (w.betCount || 1) + '  |  奖金: ¥' + (w.prizeAmount || 0).toLocaleString();
+                    firstList.appendChild(li);
+                });
+            } else {
+                document.getElementById('firstTitle').style.display = 'block';
+                firstList.innerHTML = '<li style="color:#999;">暂无一等奖中奖者</li>';
+            }
+
+            modal.classList.add('show');
+        }
+
+        function exportAutoTestResult() {
+            var drawNo = window._autoTestDrawNo;
+            if (!drawNo) {
+                alert('无测试结果可导出');
+                return;
+            }
+            window.open('/api/stats/export/download?drawNo=' + drawNo, '_blank');
+        }
+
+        function closeWinnerModal() {
+            document.getElementById('winnerModal').classList.remove('show');
+        }
+
+        function setProgress(pct, text, isError) {
+            var fill = document.getElementById('progressFill');
+            var txt = document.getElementById('progressText');
+            fill.style.width = pct + '%';
+            txt.textContent = text;
+            fill.className = 'progress-fill';
+            if (isError) fill.classList.add('error');
+            else if (pct >= 100) fill.classList.add('done');
+        }
+
+        function stopProgressPoll() {
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                progressTimer = null;
+            }
+        }
+
+        // ===== 清空数据 =====
+        function clearAllData() {
+            if (!confirm('确认清空所有数据？\n\n将删除所有用户、彩票、开奖记录、通知数据！\n此操作不可恢复！')) return;
+            if (!confirm('再次确认：真的要清空全部数据吗？')) return;
+
+            var btn = document.querySelector('.btn-danger[onclick="clearAllData()"]');
+            btn.disabled = true;
+            btn.textContent = '清空中...';
+
+            var pw = document.getElementById('progressWrap');
+            pw.classList.add('active');
+            setProgress(0, '正在清空数据...');
+
+            apiPost('/clear-data', {}).then(function (res) {
+                btn.disabled = false;
+                btn.textContent = '清空数据';
+
+                if (res.code === 200) {
+                    setProgress(100, res.data);
+                    alert(res.data);
+                    location.reload();
+                } else {
+                    setProgress(0, '清空失败: ' + (res.message || ''), true);
+                    alert('清空失败: ' + (res.message || ''));
+                }
+            }).catch(function (err) {
+                btn.disabled = false;
+                btn.textContent = '清空数据';
+                setProgress(0, '请求失败: ' + err, true);
+                alert('请求失败: ' + err);
+            });
+        }
+
+        function refreshLatestDraw() {
+            apiGet('/latest-draw-result').then(function (res) {
+                if (res.code === 200 && res.data) {
+                    var d = res.data;
+                    var html = '<p>期号: <strong>' + d.drawNo + '</strong></p>' +
+                        '<p>开奖号码: ';
+                    d.numbers.forEach(function (n) {
+                        html += '<span class="ball winning" style="display:inline-flex;width:32px;height:32px;margin:2px;">' + n + '</span> ';
+                    });
+                    html += '</p><p>开奖时间: ' + formatTime(d.drawTime) + '</p>';
+                    document.getElementById('latestDrawInfo').innerHTML = html;
+                }
+            });
+        }
+    </script>
+</body>
+</html>

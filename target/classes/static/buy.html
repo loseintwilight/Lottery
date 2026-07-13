@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩票系统 - 购买彩票</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body onload="initPage()">
+    <div class="header">
+        <h1>彩票购买抽奖系统</h1>
+        <div class="user-info" id="userInfo"></div>
+    </div>
+
+    <div class="nav">
+        <a href="index.html">首页</a>
+        <a href="buy.html" class="active">购买彩票</a>
+        <a href="history.html">购彩记录</a>
+        <a href="draw.html">开奖结果</a>
+    </div>
+
+    <div class="content">
+        <div id="errorMsg" class="alert alert-error hidden"></div>
+        <div id="successMsg" class="alert alert-success hidden"></div>
+
+        <div class="card">
+            <h2>购买彩票 - 36选7</h2>
+            <div class="form-group">
+                <label>期号</label>
+                <input type="text" id="drawNo" readonly>
+            </div>
+            <div class="form-group">
+                <label>选择号码（请选7个，范围1-36）</label>
+                <div class="ball-grid" id="ballGrid"></div>
+            </div>
+            <div class="form-group">
+                <label>已选号码</label>
+                <div id="selectedDisplay" style="font-size:14px;color:#666;">请点击上方号码</div>
+            </div>
+            <div class="form-group">
+                <label>投注倍数</label>
+                <input type="number" id="betCount" value="1" min="1" max="99" style="width:100px;">
+            </div>
+            <div class="form-group">
+                <label>预计金额: ¥<span id="amountDisplay">2.00</span></label>
+            </div>
+            <div class="flex gap-8">
+                <button class="btn" onclick="randomSelect()">随机选号</button>
+                <button class="btn" onclick="clearSelection()">清除</button>
+                <button class="btn btn-primary" onclick="doBuy()">确认购买</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        var selectedNumbers = [];
+
+        function onPageReady() {
+            // 加载期号
+            getCurrentDrawNo().then(function (res) {
+                if (res.code === 200) {
+                    document.getElementById('drawNo').value = res.data;
+                }
+            });
+
+            // 生成号码球
+            var grid = document.getElementById('ballGrid');
+            for (var i = 1; i <= 36; i++) {
+                var ball = document.createElement('div');
+                ball.className = 'ball';
+                ball.textContent = i;
+                ball.dataset.num = i;
+                ball.onclick = function () {
+                    toggleNumber(parseInt(this.dataset.num));
+                };
+                grid.appendChild(ball);
+            }
+        }
+
+        function toggleNumber(num) {
+            var idx = selectedNumbers.indexOf(num);
+            if (idx >= 0) {
+                selectedNumbers.splice(idx, 1);
+            } else {
+                if (selectedNumbers.length >= 7) {
+                    showError('最多选择7个号码');
+                    return;
+                }
+                selectedNumbers.push(num);
+            }
+            selectedNumbers.sort(function (a, b) { return a - b; });
+            updateDisplay();
+            hideMessages();
+        }
+
+        function randomSelect() {
+            selectedNumbers = [];
+            var pool = [];
+            for (var i = 1; i <= 36; i++) pool.push(i);
+            for (var j = pool.length - 1; j > 0; j--) {
+                var k = Math.floor(Math.random() * (j + 1));
+                var temp = pool[j];
+                pool[j] = pool[k];
+                pool[k] = temp;
+            }
+            selectedNumbers = pool.slice(0, 7).sort(function (a, b) { return a - b; });
+            updateDisplay();
+            hideMessages();
+        }
+
+        function clearSelection() {
+            selectedNumbers = [];
+            updateDisplay();
+            hideMessages();
+        }
+
+        function updateDisplay() {
+            // 更新球的状态
+            var balls = document.querySelectorAll('.ball');
+            balls.forEach(function (ball) {
+                var num = parseInt(ball.dataset.num);
+                if (selectedNumbers.indexOf(num) >= 0) {
+                    ball.classList.add('selected');
+                } else {
+                    ball.classList.remove('selected');
+                }
+            });
+
+            // 更新已选号码显示
+            if (selectedNumbers.length === 0) {
+                document.getElementById('selectedDisplay').textContent = '请点击上方号码';
+            } else {
+                document.getElementById('selectedDisplay').innerHTML =
+                    selectedNumbers.map(function (n) {
+                        return '<span class="ball selected" style="display:inline-flex;width:32px;height:32px;margin:2px;cursor:default;">' + n + '</span>';
+                    }).join(' ');
+            }
+
+            // 更新金额
+            var betCount = parseInt(document.getElementById('betCount').value) || 1;
+            document.getElementById('amountDisplay').textContent = (betCount * 2).toFixed(2);
+        }
+
+        document.getElementById('betCount').addEventListener('input', updateDisplay);
+
+        function doBuy() {
+            hideMessages();
+
+            if (selectedNumbers.length !== 7) {
+                showError('请选择7个号码');
+                return;
+            }
+
+            var drawNo = document.getElementById('drawNo').value;
+            var betCount = parseInt(document.getElementById('betCount').value) || 1;
+            if (betCount < 1 || betCount > 99) {
+                showError('投注倍数范围为1-99');
+                return;
+            }
+
+            var totalAmount = betCount * 2;
+            if (currentUser.balance < totalAmount) {
+                showError('余额不足，请先充值');
+                return;
+            }
+
+            apiPost('/buy', {
+                userId: currentUser.userId,
+                drawNo: drawNo,
+                numbers: selectedNumbers,
+                betCount: betCount
+            }).then(function (res) {
+                if (res.code === 200) {
+                    showSuccess('购买成功！已扣款 ¥' + totalAmount.toFixed(2));
+                    currentUser.balance -= totalAmount;
+                    document.getElementById('balanceDisplay').textContent = (currentUser.balance || 0).toFixed(2);
+                } else {
+                    showError(res.message || '购买失败');
+                }
+            });
+        }
+    </script>
+</body>
+</html>

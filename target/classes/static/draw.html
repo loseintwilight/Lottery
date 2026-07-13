@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩票系统 - 开奖结果</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body onload="initPage()">
+    <div class="header">
+        <h1>彩票购买抽奖系统</h1>
+        <div class="user-info" id="userInfo"></div>
+    </div>
+
+    <div class="nav">
+        <a href="index.html">首页</a>
+        <a href="buy.html">购买彩票</a>
+        <a href="history.html">购彩记录</a>
+        <a href="draw.html" class="active">开奖结果</a>
+    </div>
+
+    <div class="content">
+        <div id="errorMsg" class="alert alert-error hidden"></div>
+        <div id="successMsg" class="alert alert-success hidden"></div>
+
+        <div class="card">
+            <div class="flex-between">
+                <h2>开奖操作</h2>
+            </div>
+            <div class="form-group">
+                <label>当前期号</label>
+                <input type="text" id="currentDrawNo" readonly>
+            </div>
+            <button class="btn btn-primary" onclick="doDraw()">开奖</button>
+            <button class="btn" onclick="loadDrawResult()" style="margin-left:8px;">查询开奖结果</button>
+        </div>
+
+        <div class="card" id="rollingArea" style="display:none;text-align:center;">
+            <h2>开奖号码滚动中...</h2>
+            <div style="font-size:14px;color:#999;margin-bottom:12px;">点击「停止」按钮确定开奖结果</div>
+            <div id="rollingBalls" style="padding:20px 0;"></div>
+        </div>
+
+        <div class="card" id="resultCard" style="display:none;">
+            <h2>开奖结果</h2>
+            <div id="drawResult"></div>
+        </div>
+
+        <div class="card" id="statsCard" style="display:none;">
+            <div class="flex-between">
+                <h2>统计数据</h2>
+                <button class="btn btn-sm" onclick="exportExcel()">导出报表</button>
+            </div>
+            <div id="statsContent"></div>
+        </div>
+
+        <div class="card" id="winnerCard" style="display:none;">
+            <h2>中奖名单</h2>
+            <div id="winnerContent"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        function onPageReady() {
+            getCurrentDrawNo().then(function (res) {
+                if (res.code === 200) {
+                    document.getElementById('currentDrawNo').value = res.data;
+                }
+            });
+        }
+
+        var rollingTimer = null;
+        var isRolling = false;
+
+        function doDraw() {
+            if (isRolling) {
+                // 停止滚动 → 执行开奖
+                stopRollingAndDraw();
+                return;
+            }
+            var drawNo = document.getElementById('currentDrawNo').value;
+            if (!confirm('确认开奖 ' + drawNo + ' ？')) return;
+
+            // 隐藏旧结果
+            document.getElementById('resultCard').style.display = 'none';
+            document.getElementById('statsCard').style.display = 'none';
+            document.getElementById('winnerCard').style.display = 'none';
+
+            // 显示滚动区域
+            var roller = document.getElementById('rollingArea');
+            roller.style.display = 'block';
+
+            // 切换按钮
+            var btn = document.querySelector('.btn-primary[onclick="doDraw()"]');
+            btn.textContent = '停止';
+            btn.className = 'btn btn-danger';
+            isRolling = true;
+
+            // 开始轮询滚动号码
+            rollingTimer = setInterval(function () {
+                apiGet('/draw/rolling').then(function (res) {
+                    if (res.code === 200 && res.data) {
+                        updateRollingBalls(res.data);
+                    }
+                });
+            }, 100);
+        }
+
+        function stopRollingAndDraw() {
+            if (rollingTimer) {
+                clearInterval(rollingTimer);
+                rollingTimer = null;
+            }
+            isRolling = false;
+
+            var btn = document.querySelector('.btn-danger[onclick="doDraw()"]');
+            btn.textContent = '开奖中...';
+            btn.disabled = true;
+
+            var drawNo = document.getElementById('currentDrawNo').value;
+            apiPost('/draw', { drawNo: drawNo }).then(function (res) {
+                btn.disabled = false;
+                btn.textContent = '开奖';
+                btn.className = 'btn btn-primary';
+
+                if (res.code === 200) {
+                    // 显示最终号码
+                    updateRollingBalls(res.data.numbers);
+                    showSuccess('开奖成功！');
+                    displayResult(res.data);
+                    displayStats(res.data);
+                    displayWinners(res.data);
+                    // 生成新期号
+                    getCurrentDrawNo().then(function (r) {
+                        if (r.code === 200) {
+                            document.getElementById('currentDrawNo').value = r.data;
+                        }
+                    });
+                } else {
+                    document.getElementById('rollingArea').style.display = 'none';
+                    showError(res.message || '开奖失败');
+                }
+            }).catch(function (err) {
+                btn.disabled = false;
+                btn.textContent = '开奖';
+                btn.className = 'btn btn-primary';
+                document.getElementById('rollingArea').style.display = 'none';
+                showError('请求失败: ' + err);
+            });
+        }
+
+        function updateRollingBalls(numbers) {
+            var container = document.getElementById('rollingBalls');
+            container.innerHTML = '';
+            numbers.forEach(function (n) {
+                var span = document.createElement('span');
+                span.className = 'ball winning';
+                span.style.cssText = 'display:inline-flex;width:48px;height:48px;font-size:20px;margin:4px;animation:pulse 0.3s ease-in-out;';
+                span.textContent = n;
+                container.appendChild(span);
+            });
+        }
+
+        function loadDrawResult() {
+            hideMessages();
+            var drawNo = prompt('请输入要查询的期号（例如 20260708001）：', '');
+            if (!drawNo || drawNo.trim() === '') return;
+            drawNo = drawNo.trim();
+            apiGet('/draw/result?drawNo=' + drawNo).then(function (res) {
+                if (res.code === 200) {
+                    document.getElementById('currentDrawNo').value = drawNo;
+                    displayResult(res.data);
+                    displayStats(res.data);
+                    displayWinners(res.data);
+                } else {
+                    showError('该期尚未开奖或不存在');
+                    document.getElementById('resultCard').style.display = 'none';
+                    document.getElementById('statsCard').style.display = 'none';
+                    document.getElementById('winnerCard').style.display = 'none';
+                }
+            });
+        }
+
+        function displayResult(data) {
+            var card = document.getElementById('resultCard');
+            card.style.display = 'block';
+
+            var html = '<p>期号: <strong>' + data.drawNo + '</strong></p>';
+            html += '<p>开奖号码: </p><div class="ball-grid" style="margin-top:8px;">';
+            (data.numbers || []).forEach(function (n) {
+                html += '<span class="ball winning" style="cursor:default;">' + n + '</span>';
+            });
+            html += '</div>';
+            html += '<p class="mt-16">开奖时间: ' + formatTime(data.drawTime) + '</p>';
+            html += '<p>总投注: ' + (data.totalBets || 0) + ' 注</p>';
+            html += '<p>总金额: ¥' + (data.totalAmount || 0).toFixed(2) + '</p>';
+
+            document.getElementById('drawResult').innerHTML = html;
+        }
+
+        function displayWinners(data) {
+            var card = document.getElementById('winnerCard');
+            card.style.display = 'block';
+            var html = '';
+
+            var grand = data.grandPrizeWinners || [];
+            var first = data.firstPrizeWinners || [];
+
+            if (grand.length > 0) {
+                html += '<h3 style="color:#e74c3c;margin:12px 0 8px;">特等奖 — 奖金 ¥5,000,000</h3>';
+                html += '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>用户ID</th><th>用户名</th><th>倍数</th><th>奖金</th></tr></thead><tbody>';
+                grand.forEach(function (w) {
+                    html += '<tr><td>' + w.userId + '</td><td>' + (w.username || '') + '</td><td>' + (w.betCount || 1) + '</td><td>¥' + (w.prizeAmount || 0).toLocaleString() + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+
+            if (first.length > 0) {
+                html += '<h3 style="color:#e67e22;margin:16px 0 8px;">一等奖 — 奖金 ¥100,000</h3>';
+                html += '<div class="table-wrap"><table><thead><tr>' +
+                    '<th>用户ID</th><th>用户名</th><th>倍数</th><th>奖金</th></tr></thead><tbody>';
+                first.forEach(function (w) {
+                    html += '<tr><td>' + w.userId + '</td><td>' + (w.username || '') + '</td><td>' + (w.betCount || 1) + '</td><td>¥' + (w.prizeAmount || 0).toLocaleString() + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+
+            if (!html) {
+                html = '<p style="color:#999;">本期无中奖者</p>';
+            }
+
+            document.getElementById('winnerContent').innerHTML = html;
+        }
+
+        function displayStats(data) {
+            var card = document.getElementById('statsCard');
+            card.style.display = 'block';
+
+            var stats = data.statistics || {};
+            var html = '<div class="table-wrap"><table><thead><tr>' +
+                '<th>指标</th><th>数值</th></tr></thead><tbody>' +
+                '<tr><td>总投注数</td><td>' + (stats.totalBets || data.totalBets || 0) + '</td></tr>' +
+                '<tr><td>总金额</td><td>¥' + ((stats.totalAmount || data.totalAmount || 0)).toFixed(2) + '</td></tr>' +
+                '<tr><td>特等奖（7中）</td><td>' + (stats.grandPrizeCount || 0) + ' 人</td></tr>' +
+                '<tr><td>一等奖（6中）</td><td>' + (stats.firstPrizeCount || 0) + ' 人</td></tr>' +
+                '<tr><td>未中奖</td><td>' + (stats.noPrizeCount || 0) + ' 注</td></tr>' +
+                '</tbody></table></div>';
+
+            document.getElementById('statsContent').innerHTML = html;
+        }
+
+        function exportExcel() {
+            var drawNo = document.getElementById('currentDrawNo').value;
+            var input = prompt('请输入要导出报表的期号：', drawNo);
+            if (!input || input.trim() === '') return;
+            window.open('/api/stats/export/download?drawNo=' + input.trim(), '_blank');
+        }
+    </script>
+</body>
+</html>

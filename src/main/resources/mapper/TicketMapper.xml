@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lottery.mapper.TicketMapper">
+
+    <!-- ====== Entity resultMap ====== -->
+    <resultMap id="TicketResultMap" type="com.lottery.pojo.entity.Ticket">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="drawNo" column="draw_no"/>
+        <result property="numbers" column="numbers"/>
+        <result property="betCount" column="bet_count"/>
+        <result property="amount" column="amount"/>
+        <result property="status" column="status"/>
+        <result property="buyTime" column="buy_time"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <resultMap id="TicketHistoryMap" type="com.lottery.pojo.vo.TicketHistoryVO">
+        <id property="ticketId" column="ticketId"/>
+        <result property="drawNo" column="drawNo"/>
+        <result property="numbers" column="numbers"/>
+        <result property="betCount" column="betCount"/>
+        <result property="amount" column="amount"/>
+        <result property="status" column="status"/>
+        <result property="buyTime" column="buyTime"/>
+        <result property="username" column="username"/>
+        <result property="phone" column="phone"/>
+    </resultMap>
+
+    <resultMap id="WinnerVOMap" type="com.lottery.pojo.vo.WinnerVO">
+        <result property="userId" column="userId"/>
+        <result property="username" column="username"/>
+        <result property="betCount" column="betCount"/>
+        <result property="prizeLevel" column="prizeLevel"/>
+        <result property="prizeAmount" column="prizeAmount"/>
+    </resultMap>
+
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ticket(user_id, draw_no, numbers, bet_count, amount, status, buy_time, create_time, update_time)
+        VALUES(#{userId}, #{drawNo}, #{numbers}, #{betCount}, #{amount}, #{status}, #{buyTime}, #{buyTime}, #{buyTime})
+    </insert>
+
+    <insert id="batchInsertTickets">
+        INSERT INTO ticket(user_id, draw_no, numbers, bet_count, amount, status, buy_time, create_time, update_time) VALUES
+        <foreach collection="list" item="t" separator=",">
+            (#{t.userId}, #{t.drawNo}, #{t.numbers}, #{t.betCount}, #{t.amount}, #{t.status}, #{t.buyTime}, #{t.buyTime}, #{t.buyTime})
+        </foreach>
+    </insert>
+
+
+
+    <select id="selectById" resultMap="TicketResultMap">
+        SELECT * FROM ticket WHERE id = #{id}
+    </select>
+
+    <select id="selectByDrawNo" resultMap="TicketResultMap">
+        SELECT * FROM ticket WHERE draw_no = #{drawNo}
+    </select>
+
+    <select id="selectHistoryByUserId" resultMap="TicketHistoryMap">
+        SELECT
+            t.id AS ticketId,
+            t.draw_no AS drawNo,
+            t.numbers,
+            t.bet_count AS betCount,
+            t.amount,
+            t.status,
+            t.buy_time AS buyTime,
+            u.username,
+            u.phone
+        FROM ticket t
+        LEFT JOIN user u ON t.user_id = u.id
+        WHERE t.user_id = #{userId}
+        ORDER BY t.buy_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="selectWinnersByDrawNo" resultMap="WinnerVOMap">
+        SELECT
+            t.user_id AS userId,
+            u.username,
+            t.bet_count AS betCount,
+            CASE WHEN t.status = 2 THEN '特等奖' WHEN t.status = 3 THEN '一等奖' END AS prizeLevel,
+            CASE WHEN t.status = 2 THEN 5000000 WHEN t.status = 3 THEN 100000 END AS prizeAmount
+        FROM ticket t
+        JOIN user u ON t.user_id = u.id
+        WHERE t.draw_no = #{drawNo} AND t.status IN (2, 3)
+        ORDER BY t.status ASC, u.username ASC
+    </select>
+
+
+
+    <select id="countByDrawNo" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM ticket WHERE draw_no = #{drawNo}
+    </select>
+
+    <select id="countGrandPrizeByDrawNo" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM ticket WHERE draw_no = #{drawNo} AND status = 2
+    </select>
+
+    <select id="countFirstPrizeByDrawNo" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM ticket WHERE draw_no = #{drawNo} AND status = 3
+    </select>
+
+    <select id="countNoPrizeByDrawNo" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM ticket WHERE draw_no = #{drawNo} AND status = 1
+    </select>
+
+    <select id="countUsersByDrawNo" resultType="java.lang.Integer">
+        SELECT COUNT(DISTINCT user_id) FROM ticket WHERE draw_no = #{drawNo}
+    </select>
+
+    <select id="countByUserId" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM ticket WHERE user_id = #{userId}
+    </select>
+
+
+
+    <update id="updateStatus">
+        UPDATE ticket SET status = #{status}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+
+
+    <update id="deleteAll">
+        TRUNCATE TABLE ticket
+    </update>
+
+</mapper>

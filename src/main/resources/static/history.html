@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩票系统 - 购彩记录</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body onload="initPage()">
+    <div class="header">
+        <h1>彩票购买抽奖系统</h1>
+        <div class="user-info" id="userInfo"></div>
+    </div>
+
+    <div class="nav">
+        <a href="index.html">首页</a>
+        <a href="buy.html">购买彩票</a>
+        <a href="history.html" class="active">购彩记录</a>
+        <a href="draw.html">开奖结果</a>
+    </div>
+
+    <div class="content">
+        <div class="card">
+            <div class="flex-between">
+                <h2>购彩记录</h2>
+            </div>
+            <div id="historyContent">
+                <p>加载中...</p>
+            </div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        var currentPage = 1;
+        var pageSize = 10;
+
+        function onPageReady() {
+            loadHistory(1);
+        }
+
+        function loadHistory(page) {
+            currentPage = page;
+            var content = document.getElementById('historyContent');
+            content.innerHTML = '<p>加载中...</p>';
+
+            apiGet('/history?userId=' + currentUser.userId + '&page=' + page + '&size=' + pageSize)
+                .then(function (res) {
+                    if (res.code === 200) {
+                        renderHistory(res.data);
+                    } else {
+                        content.innerHTML = '<p>加载失败</p>';
+                    }
+                });
+        }
+
+        function renderHistory(data) {
+            var content = document.getElementById('historyContent');
+            var list = data.list || [];
+
+            if (list.length === 0) {
+                content.innerHTML = '<p>暂无购彩记录</p>';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            var html = '<div class="table-wrap"><table><thead><tr>' +
+                '<th>期号</th><th>号码</th><th>倍数</th><th>金额</th><th>状态</th><th>购买时间</th>' +
+                '</tr></thead><tbody>';
+
+            list.forEach(function (item) {
+                html += '<tr>' +
+                    '<td>' + (item.drawNo || '-') + '</td>' +
+                    '<td>' + (item.numbers || '-') + '</td>' +
+                    '<td>' + (item.betCount || 0) + '</td>' +
+                    '<td>¥' + (item.amount || 0).toFixed(2) + '</td>' +
+                    '<td>' + getStatusTag(item.status) + '</td>' +
+                    '<td>' + formatTime(item.buyTime) + '</td>' +
+                    '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            content.innerHTML = html;
+
+            // 分页
+            var totalPages = data.pages || 1;
+            var pagHtml = '';
+            if (currentPage > 1) {
+                pagHtml += '<button class="page-btn" onclick="loadHistory(1)">首页</button>';
+                pagHtml += '<button class="page-btn" onclick="loadHistory(' + (currentPage - 1) + ')">上一页</button>';
+            }
+            for (var i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+                pagHtml += '<button class="page-btn ' + (i === currentPage ? 'active' : '') + '" onclick="loadHistory(' + i + ')">' + i + '</button>';
+            }
+            if (currentPage < totalPages) {
+                pagHtml += '<button class="page-btn" onclick="loadHistory(' + (currentPage + 1) + ')">下一页</button>';
+                pagHtml += '<button class="page-btn" onclick="loadHistory(' + totalPages + ')">末页</button>';
+            }
+            document.getElementById('pagination').innerHTML = pagHtml;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lottery.mapper.UserMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user(username, password, phone, balance, create_time, update_time)
+        VALUES(#{username}, #{password}, #{phone}, #{balance}, NOW(), NOW())
+    </insert>
+
+    <insert id="batchInsertUsers" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user(username, password, phone, balance, create_time, update_time) VALUES
+        <foreach collection="list" item="u" separator=",">
+            (#{u.username}, #{u.password}, #{u.phone}, #{u.balance}, NOW(), NOW())
+        </foreach>
+    </insert>
+
+    <select id="selectByUsername" resultType="com.lottery.pojo.entity.User">
+        SELECT * FROM user WHERE username = #{username}
+    </select>
+
+    <select id="selectById" resultType="com.lottery.pojo.entity.User">
+        SELECT * FROM user WHERE id = #{id}
+    </select>
+
+    <select id="selectByIds" resultType="com.lottery.pojo.entity.User">
+        SELECT * FROM user WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <update id="addBalance">
+        UPDATE user SET balance = balance + #{amount}, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="deductBalance">
+        UPDATE user SET balance = balance - #{amount}, update_time = NOW() WHERE id = #{id} AND balance >= #{amount}
+    </update>
+
+    <update id="deleteAll">
+        TRUNCATE TABLE user
+    </update>
+
+    <select id="selectMaxId" resultType="java.lang.Integer">
+        SELECT MAX(id) FROM user
+    </select>
+
+</mapper>

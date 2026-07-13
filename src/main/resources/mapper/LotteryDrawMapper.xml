@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lottery.mapper.LotteryDrawMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO lottery_draw(draw_no, numbers, draw_time, total_bets, total_amount, create_time, update_time)
+        VALUES(#{drawNo}, #{numbers}, #{drawTime}, #{totalBets}, #{totalAmount}, NOW(), NOW())
+    </insert>
+
+    <select id="selectByDrawNo" resultType="com.lottery.pojo.entity.LotteryDraw">
+        SELECT * FROM lottery_draw WHERE draw_no = #{drawNo}
+    </select>
+
+    <select id="selectLatest" resultType="com.lottery.pojo.entity.LotteryDraw">
+        SELECT * FROM lottery_draw ORDER BY id DESC LIMIT 1
+    </select>
+
+    <select id="selectLatestCompleted" resultType="com.lottery.pojo.entity.LotteryDraw">
+        SELECT * FROM lottery_draw WHERE numbers IS NOT NULL ORDER BY id DESC LIMIT 1
+    </select>
+
+    <update id="updateByDrawNo">
+        UPDATE lottery_draw SET numbers = #{numbers}, draw_time = #{drawTime},
+        total_bets = #{totalBets}, total_amount = #{totalAmount}, update_time = NOW() WHERE draw_no = #{drawNo}
+    </update>
+
+    <update id="deleteAll">
+        TRUNCATE TABLE lottery_draw
+    </update>
+
+</mapper>
